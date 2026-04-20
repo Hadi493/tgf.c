@@ -14,6 +14,7 @@ typedef struct {
     int64_t chat_id;
     int64_t grouped_id;
     int64_t *msg_ids;
+    char **texts;
     size_t count;
     uint64_t first_seen;
 } PendingGroup;

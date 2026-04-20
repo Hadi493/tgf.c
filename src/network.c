@@ -16,6 +16,15 @@ void td_client_send(void *client, cJSON *request) {
     cJSON_Delete(request);
 }
 
+cJSON *td_client_execute(cJSON *request) {
+    char *json = cJSON_PrintUnformatted(request);
+    const char *resp_json = td_json_client_execute(NULL, json);
+    free(json);
+    cJSON_Delete(request);
+    if (!resp_json) return NULL;
+    return cJSON_Parse(resp_json);
+}
+
 cJSON *td_client_receive(void *client, double timeout) {
     const char *json = td_json_client_receive(client, timeout);
     if (!json) return NULL;
