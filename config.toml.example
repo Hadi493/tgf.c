@@ -1,0 +1,13 @@
+[source_channels]
+# List of individual channel IDs to monitor
+channels = [
+    -1001234567890,
+    -1000987654321
+]
+
+[source]
+# List of folder names to monitor
+folder = [
+    "News",
+    "Tech"
+]
