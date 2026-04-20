@@ -1,0 +1,7 @@
+.env
+config.toml
+tgf
+tgf.db
+tdlib/
+src/*.o
+vendor/*.o
