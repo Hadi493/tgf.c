@@ -13,14 +13,12 @@ void td_client_send(void *client, cJSON *request) {
     fprintf(stderr, "Sending to TDLib: %s\n", json);
     td_json_client_send(client, json);
     free(json);
-    cJSON_Delete(request);
 }
 
 cJSON *td_client_execute(cJSON *request) {
     char *json = cJSON_PrintUnformatted(request);
     const char *resp_json = td_json_client_execute(NULL, json);
     free(json);
-    cJSON_Delete(request);
     if (!resp_json) return NULL;
     return cJSON_Parse(resp_json);
 }
@@ -60,21 +58,25 @@ void handle_auth(void *client, Config *cfg, cJSON *update) {
         cJSON_AddStringToObject(req, "application_version", "1.0");
         cJSON_AddBoolToObject(req, "enable_storage_optimizer", true);
         td_client_send(client, req);
+        cJSON_Delete(req);
     } else if (strcmp(state, "authorizationStateWaitEncryptionKey") == 0) {
         cJSON *req = cJSON_CreateObject();
         cJSON_AddStringToObject(req, "@type", "checkDatabaseEncryptionKey");
         td_client_send(client, req);
+        cJSON_Delete(req);
     } else if (strcmp(state, "authorizationStateWaitPhoneNumber") == 0) {
         if (cfg->bot_token && strlen(cfg->bot_token) > 0) {
             cJSON *req = cJSON_CreateObject();
             cJSON_AddStringToObject(req, "@type", "checkAuthenticationBotToken");
             cJSON_AddStringToObject(req, "token", cfg->bot_token);
             td_client_send(client, req);
+            cJSON_Delete(req);
         } else if (cfg->phone && strlen(cfg->phone) > 0) {
             cJSON *req = cJSON_CreateObject();
             cJSON_AddStringToObject(req, "@type", "setAuthenticationPhoneNumber");
             cJSON_AddStringToObject(req, "phone_number", cfg->phone);
             td_client_send(client, req);
+            cJSON_Delete(req);
         }
     } else if (strcmp(state, "authorizationStateWaitCode") == 0) {
         char code[32];
@@ -85,6 +87,7 @@ void handle_auth(void *client, Config *cfg, cJSON *update) {
             cJSON_AddStringToObject(req, "@type", "checkAuthenticationCode");
             cJSON_AddStringToObject(req, "code", code);
             td_client_send(client, req);
+            cJSON_Delete(req);
         }
     }
 }

@@ -67,6 +67,7 @@ int main(int argc, char **argv) {
     cJSON_AddStringToObject(verb, "@type", "setLogVerbosityLevel");
     cJSON_AddNumberToObject(verb, "new_verbosity_level", 1);
     td_client_send(client, verb);
+    cJSON_Delete(verb);
 
     uv_loop_t *loop = uv_default_loop();
     AppContext ctx = {
@@ -75,7 +76,7 @@ int main(int argc, char **argv) {
         .loop = loop,
         .queue_head = NULL,
         .queue_tail = NULL,
-        .group = {0}
+        .groups = NULL
     };
     uv_mutex_init(&ctx.queue_mutex);
     uv_timer_init(loop, &ctx.group_timer);

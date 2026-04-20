@@ -58,6 +58,7 @@ static void parse_and_send(AppContext *ctx, int64_t from_chat_id, int64_t msg_id
     if (parse_mode) cJSON_AddStringToObject(parse_mode, "@type", "textParseModeHTML");
 
     cJSON *formatted = td_client_execute(parse_req);
+    cJSON_Delete(parse_req);
     free(full_text);
 
     if (formatted) {
@@ -77,7 +78,9 @@ static void parse_and_send(AppContext *ctx, int64_t from_chat_id, int64_t msg_id
                         cJSON_AddBoolToObject(copy_opts, "send_copy", true);
                         cJSON_AddBoolToObject(copy_opts, "replace_caption", true);
                         cJSON_AddItemToObject(copy_opts, "new_caption", formatted);
+                        formatted = NULL; // Ownership transferred to req
                         td_client_send(ctx->td_client, req);
+                        cJSON_Delete(req);
                         return;
                     }
                 }
@@ -89,20 +92,13 @@ static void parse_and_send(AppContext *ctx, int64_t from_chat_id, int64_t msg_id
     fprintf(stderr, "\033[1;31m[ERROR]\033[0m Failed to process forward request for msg %lld\n", (long long)msg_id);
 }
 
-static void flush_group(uv_timer_t *handle) {
-    if (!handle || !handle->data) return;
-    AppContext *ctx = (AppContext *)handle->data;
-    if (ctx->group.count == 0) return;
+static void flush_media_group(AppContext *ctx, MediaGroup *group) {
+    if (!ctx || !group || group->count == 0) return;
 
-    int64_t chat_id = ctx->group.chat_id;
-    size_t count = ctx->group.count;
-    int64_t *msg_ids = ctx->group.msg_ids;
-    char **texts = ctx->group.texts;
-
-    ctx->group.msg_ids = NULL;
-    ctx->group.texts = NULL;
-    ctx->group.count = 0;
-    memset(&ctx->group, 0, sizeof(PendingGroup));
+    int64_t chat_id = group->chat_id;
+    size_t count = group->count;
+    int64_t *msg_ids = group->msg_ids;
+    char **texts = group->texts;
 
     if (!msg_ids || !texts) {
         if (msg_ids) free(msg_ids);
@@ -114,24 +110,123 @@ static void flush_group(uv_timer_t *handle) {
     }
 
     char *title = get_chat_title(chat_id);
+    const char *main_caption = "";
     for (size_t i = 0; i < count; i++) {
-        char *msg_link = construct_msg_link(chat_id, msg_ids[i]);
-        char header[512];
-        if (msg_link) {
-            if (title) {
-                snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: %s\n\n", msg_link, title);
-            } else {
-                snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: Unknown\n\n", msg_link);
-            }
-            if (texts[i]) parse_and_send(ctx, chat_id, msg_ids[i], header, texts[i]);
-            free(msg_link);
+        if (texts[i] && strlen(texts[i]) > 0) {
+            main_caption = texts[i];
+            break;
         }
-        if (texts[i]) free(texts[i]);
     }
+
+    char *msg_link = construct_msg_link(chat_id, msg_ids[0]);
+    char header[512];
+    if (msg_link) {
+        if (title) snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: %s\n\n", msg_link, title);
+        else snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: Unknown\n\n", msg_link);
+        free(msg_link);
+    } else {
+        header[0] = '\0';
+    }
+
+    // Prepare header + caption
+    size_t hlen = strlen(header);
+    size_t clen = strlen(main_caption);
+    char *full_text = malloc(hlen + clen + 1);
+    if (full_text) {
+        memcpy(full_text, header, hlen);
+        memcpy(full_text + hlen, main_caption, clen + 1);
+    }
+
+    cJSON *parse_req = cJSON_CreateObject();
+    if (parse_req && full_text) {
+        cJSON_AddStringToObject(parse_req, "@type", "parseTextEntities");
+        cJSON_AddStringToObject(parse_req, "text", full_text);
+        cJSON *parse_mode = cJSON_AddObjectToObject(parse_req, "parse_mode");
+        if (parse_mode) cJSON_AddStringToObject(parse_mode, "@type", "textParseModeHTML");
+        
+        cJSON *formatted = td_client_execute(parse_req);
+        cJSON_Delete(parse_req);
+        if (formatted) {
+            // We'll use sendMessageAlbum if multiple items, otherwise sendMessage
+            if (count > 1) {
+                cJSON *req = cJSON_CreateObject();
+                cJSON_AddStringToObject(req, "@type", "sendMessage");
+                cJSON_AddNumberToObject(req, "chat_id", (double)ctx->cfg->aggregator_chat_id);
+                cJSON *input = cJSON_AddObjectToObject(req, "input_message_content");
+                if (input) {
+                    cJSON_AddStringToObject(input, "@type", "inputMessageAlbum");
+                    cJSON *contents = cJSON_AddArrayToObject(input, "input_message_contents");
+                    if (contents) {
+                        for (size_t i = 0; i < count; i++) {
+                            cJSON *item = cJSON_CreateObject();
+                            cJSON_AddStringToObject(item, "@type", "inputMessageForwarded");
+                            cJSON_AddNumberToObject(item, "from_chat_id", (double)chat_id);
+                            cJSON_AddNumberToObject(item, "message_id", (double)msg_ids[i]);
+                            cJSON *copy_opts = cJSON_AddObjectToObject(item, "copy_options");
+                            if (copy_opts) {
+                                cJSON_AddBoolToObject(copy_opts, "send_copy", true);
+                                cJSON_AddBoolToObject(copy_opts, "replace_caption", true);
+                                if (i == 0) {
+                                    // Use the formatted object directly or create a copy manually
+                                    // ItemToObject takes ownership, so we must not use 'formatted' directly if we need it for others
+                                    // But here we only use it for i == 0. However, the loop continues.
+                                    // Let's create a formattedText object for the first item.
+                                    cJSON *new_caption = cJSON_CreateObject();
+                                    cJSON_AddStringToObject(new_caption, "@type", "formattedText");
+                                    cJSON *text_item = cJSON_GetObjectItem(formatted, "text");
+                                    cJSON_AddStringToObject(new_caption, "text", (text_item && text_item->valuestring) ? text_item->valuestring : "");
+                                    cJSON *entities = cJSON_GetObjectItem(formatted, "entities");
+                                    if (entities) cJSON_AddItemToObject(new_caption, "entities", cJSON_Duplicate(entities, 1));
+                                    cJSON_AddItemToObject(copy_opts, "new_caption", new_caption);
+                                } else {
+                                    cJSON *empty_formatted = cJSON_CreateObject();
+                                    cJSON_AddStringToObject(empty_formatted, "@type", "formattedText");
+                                    cJSON_AddStringToObject(empty_formatted, "text", "");
+                                    cJSON_AddItemToObject(copy_opts, "new_caption", empty_formatted);
+                                }
+                            }
+                            cJSON_AddItemToArray(contents, item);
+                        }
+                        td_client_send(ctx->td_client, req);
+                    }
+                }
+                cJSON_Delete(req);
+            } else {
+                parse_and_send(ctx, chat_id, msg_ids[0], header, main_caption);
+            }
+            cJSON_Delete(formatted);
+        }
+    }
+    if (full_text) free(full_text);
     if (title) free(title);
+    
+    // Free group resources
+    for (size_t i = 0; i < count; i++) free(texts[i]);
     free(msg_ids);
     free(texts);
     printf("\033[1;32m[FORWARD]\033[0m Album from %lld (%zu msgs) flushed\n", (long long)chat_id, count);
+}
+
+static void group_timer_cb(uv_timer_t *handle) {
+    if (!handle || !handle->data) return;
+    AppContext *ctx = (AppContext *)handle->data;
+    
+    uint64_t now = uv_now(ctx->loop);
+    MediaGroup **curr = &ctx->groups;
+    while (*curr) {
+        MediaGroup *group = *curr;
+        if (now - group->first_seen_ms > 2000) { // 2s timeout
+            flush_media_group(ctx, group);
+            *curr = group->next;
+            free(group);
+        } else {
+            curr = &group->next;
+        }
+    }
+    
+    if (!ctx->groups) {
+        uv_timer_stop(handle);
+    }
 }
 
 static void handle_new_message(AppContext *ctx, cJSON *msg) {
@@ -185,34 +280,52 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
     }
 
     char hash_input[1024];
-    snprintf(hash_input, sizeof(hash_input), "%lld-%lld-%lld-%s", (long long)chat_id, (long long)grouped_id, (long long)reply_id, text);
+    if (grouped_id == 0) {
+        snprintf(hash_input, sizeof(hash_input), "%lld-0-%lld-%s", (long long)chat_id, (long long)reply_id, text);
+    } else {
+        // For albums, we deduplicate by message ID to ensure all parts are collected
+        snprintf(hash_input, sizeof(hash_input), "album-%lld-%lld-%lld", (long long)chat_id, (long long)grouped_id, (long long)msg_id);
+    }
+    
     char hash[65];
     compute_sha256(hash_input, NULL, 0, 0, hash);
     if (is_message_seen(hash)) return;
     mark_message_seen(hash);
 
     if (grouped_id != 0) {
-        if (ctx->group.count > 0 && (ctx->group.grouped_id != grouped_id || ctx->group.chat_id != chat_id)) {
-            uv_timer_stop(&ctx->group_timer);
-            flush_group(&ctx->group_timer);
+        MediaGroup *group = ctx->groups;
+        while (group) {
+            if (group->chat_id == chat_id && group->grouped_id == grouped_id) break;
+            group = group->next;
         }
-        if (ctx->group.count == 0) {
-            ctx->group.chat_id = chat_id;
-            ctx->group.grouped_id = grouped_id;
-            uv_timer_start(&ctx->group_timer, flush_group, 500, 0);
+
+        if (!group) {
+            group = malloc(sizeof(MediaGroup));
+            group->chat_id = chat_id;
+            group->grouped_id = grouped_id;
+            group->msg_ids = NULL;
+            group->texts = NULL;
+            group->count = 0;
+            group->first_seen_ms = uv_now(ctx->loop);
+            group->next = ctx->groups;
+            ctx->groups = group;
+            
+            if (!uv_is_active((uv_handle_t *)&ctx->group_timer)) {
+                uv_timer_start(&ctx->group_timer, group_timer_cb, 500, 500);
+            }
         }
-        if (ctx->group.count < 100) {
-            int64_t *new_ids = realloc(ctx->group.msg_ids, sizeof(int64_t) * (ctx->group.count + 1));
-            char **new_texts = realloc(ctx->group.texts, sizeof(char *) * (ctx->group.count + 1));
+
+        if (group->count < 100) {
+            int64_t *new_ids = realloc(group->msg_ids, sizeof(int64_t) * (group->count + 1));
+            char **new_texts = realloc(group->texts, sizeof(char *) * (group->count + 1));
             if (new_ids && new_texts) {
-                ctx->group.msg_ids = new_ids;
-                ctx->group.texts = new_texts;
-                ctx->group.msg_ids[ctx->group.count] = msg_id;
-                ctx->group.texts[ctx->group.count] = strdup(text);
-                ctx->group.count++;
-            } else {
-                if (new_ids) ctx->group.msg_ids = new_ids;
-                if (new_texts) ctx->group.texts = new_texts;
+                group->msg_ids = new_ids;
+                group->texts = new_texts;
+                group->msg_ids[group->count] = msg_id;
+                group->texts[group->count] = strdup(text);
+                group->count++;
+                // Reset timer on new part to wait for more
+                group->first_seen_ms = uv_now(ctx->loop);
             }
         }
     } else {
@@ -263,6 +376,7 @@ static void handle_command(AppContext *ctx, cJSON *msg) {
             }
         }
         td_client_send(ctx->td_client, req);
+        cJSON_Delete(req);
     }
 }
 
@@ -294,6 +408,7 @@ static void handle_chat_update(AppContext *ctx, int64_t cid, cJSON *chat) {
                         cJSON_AddStringToObject(req, "@type", "getSupergroupFullInfo");
                         cJSON_AddNumberToObject(req, "supergroup_id", (double)sid);
                         td_client_send(ctx->td_client, req);
+                        cJSON_Delete(req);
                     }
                 }
             }
@@ -321,6 +436,7 @@ static void process_folders(AppContext *ctx, cJSON *fs) {
                             cJSON_AddStringToObject(req, "@type", "getChatFolder");
                             cJSON_AddNumberToObject(req, "chat_folder_id", (double)id_obj->valueint);
                             td_client_send(ctx->td_client, req);
+                            cJSON_Delete(req);
                         }
                         break;
                     }
@@ -362,6 +478,7 @@ void handle_update(AppContext *ctx, cJSON *update) {
                             cJSON_AddStringToObject(get_chat, "@type", "getChat");
                             cJSON_AddNumberToObject(get_chat, "chat_id", (double)cid);
                             td_client_send(ctx->td_client, get_chat);
+                            cJSON_Delete(get_chat);
                         }
                     }
                 }
