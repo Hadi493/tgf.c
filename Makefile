@@ -1,4 +1,4 @@
-CC = gcc
+CC = cc
 CFLAGS = -Wall -Wextra -std=c11 -I./include -I./vendor -O3 -D_GNU_SOURCE -D_DEFAULT_SOURCE
 LDFLAGS = -luv -lsqlite3 -ltdjson -lm -lpthread
 
@@ -14,6 +14,9 @@ $(TARGET): $(OBJS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+run: all
+	./$(TARGET)
 
 clean:
 	rm -f $(OBJS) $(TARGET)

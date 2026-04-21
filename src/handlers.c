@@ -143,7 +143,7 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
         cJSON_AddStringToObject(parse_req, "text", full_text);
         cJSON *parse_mode = cJSON_AddObjectToObject(parse_req, "parse_mode");
         if (parse_mode) cJSON_AddStringToObject(parse_mode, "@type", "textParseModeHTML");
-        
+
         cJSON *formatted = td_client_execute(parse_req);
         cJSON_Delete(parse_req);
         if (formatted) {
@@ -199,7 +199,7 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
     }
     if (full_text) free(full_text);
     if (title) free(title);
-    
+
     // Free group resources
     for (size_t i = 0; i < count; i++) free(texts[i]);
     free(msg_ids);
@@ -210,7 +210,7 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
 static void group_timer_cb(uv_timer_t *handle) {
     if (!handle || !handle->data) return;
     AppContext *ctx = (AppContext *)handle->data;
-    
+
     uint64_t now = uv_now(ctx->loop);
     MediaGroup **curr = &ctx->groups;
     while (*curr) {
@@ -223,7 +223,7 @@ static void group_timer_cb(uv_timer_t *handle) {
             curr = &group->next;
         }
     }
-    
+
     if (!ctx->groups) {
         uv_timer_stop(handle);
     }
@@ -234,7 +234,7 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
     cJSON *cid_obj = cJSON_GetObjectItem(msg, "chat_id");
     if (!cid_obj) return;
     int64_t chat_id = (int64_t)cid_obj->valuedouble;
-    
+
     int monitored = 0;
     for (size_t i = 0; i < ctx->cfg->source_count; i++) {
         if (ctx->cfg->source_channels[i] == chat_id) {
@@ -286,7 +286,7 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
         // For albums, we deduplicate by message ID to ensure all parts are collected
         snprintf(hash_input, sizeof(hash_input), "album-%lld-%lld-%lld", (long long)chat_id, (long long)grouped_id, (long long)msg_id);
     }
-    
+
     char hash[65];
     compute_sha256(hash_input, NULL, 0, 0, hash);
     if (is_message_seen(hash)) return;
@@ -309,7 +309,7 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
             group->first_seen_ms = uv_now(ctx->loop);
             group->next = ctx->groups;
             ctx->groups = group;
-            
+
             if (!uv_is_active((uv_handle_t *)&ctx->group_timer)) {
                 uv_timer_start(&ctx->group_timer, group_timer_cb, 500, 500);
             }
@@ -347,12 +347,12 @@ static void handle_command(AppContext *ctx, cJSON *msg) {
     if (!ctx || !msg) return;
     cJSON *cid_obj = cJSON_GetObjectItem(msg, "chat_id");
     if (!cid_obj || (int64_t)cid_obj->valuedouble != ctx->cfg->aggregator_chat_id) return;
-    
+
     cJSON *content = cJSON_GetObjectItem(msg, "content");
     if (!content) return;
     cJSON *type_node = cJSON_GetObjectItem(content, "@type");
     if (!type_node || !type_node->valuestring || strcmp(type_node->valuestring, "messageText") != 0) return;
-    
+
     cJSON *txt_node = cJSON_GetObjectItem(content, "text");
     if (!txt_node) return;
     cJSON *t_node = cJSON_GetObjectItem(txt_node, "text");
@@ -371,7 +371,7 @@ static void handle_command(AppContext *ctx, cJSON *msg) {
             cJSON *reply_txt = cJSON_AddObjectToObject(input, "text");
             if (reply_txt) {
                 char status_msg[256];
-                snprintf(status_msg, sizeof(status_msg), "🤖 <b>Aggregator Status</b>\n\nChannels: %zu\nLinks: %d", ctx->cfg->source_count, link_count);
+                snprintf(status_msg, sizeof(status_msg), "🤖 Aggregator Status\n\nChannels: %zu\nLinks: %d", ctx->cfg->source_count, link_count);
                 cJSON_AddStringToObject(reply_txt, "text", status_msg);
             }
         }
@@ -384,7 +384,7 @@ static void handle_chat_update(AppContext *ctx, int64_t cid, cJSON *chat) {
     if (!ctx || !chat) return;
     cJSON *title_obj = cJSON_GetObjectItem(chat, "title");
     if (title_obj && title_obj->valuestring) store_chat_title(cid, title_obj->valuestring);
-    
+
     cJSON *type_obj = cJSON_GetObjectItem(chat, "type");
     if (type_obj) {
         cJSON *at_type = cJSON_GetObjectItem(type_obj, "@type");
