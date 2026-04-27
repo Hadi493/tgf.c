@@ -78,7 +78,7 @@ static void parse_and_send(AppContext *ctx, int64_t from_chat_id, int64_t msg_id
                         cJSON_AddBoolToObject(copy_opts, "send_copy", true);
                         cJSON_AddBoolToObject(copy_opts, "replace_caption", true);
                         cJSON_AddItemToObject(copy_opts, "new_caption", formatted);
-                        formatted = NULL; // Ownership transferred to req
+                        formatted = NULL;
                         td_client_send(ctx->td_client, req);
                         cJSON_Delete(req);
                         return;
@@ -128,7 +128,6 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
         header[0] = '\0';
     }
 
-    // Prepare header + caption
     size_t hlen = strlen(header);
     size_t clen = strlen(main_caption);
     char *full_text = malloc(hlen + clen + 1);
@@ -147,12 +146,13 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
         cJSON *formatted = td_client_execute(parse_req);
         cJSON_Delete(parse_req);
         if (formatted) {
-            // We'll use sendMessageAlbum if multiple items, otherwise sendMessage
             if (count > 1) {
                 cJSON *req = cJSON_CreateObject();
-                cJSON_AddStringToObject(req, "@type", "sendMessage");
-                cJSON_AddNumberToObject(req, "chat_id", (double)ctx->cfg->aggregator_chat_id);
-                cJSON *input = cJSON_AddObjectToObject(req, "input_message_content");
+                if (req) {
+                    cJSON_AddStringToObject(req, "@type", "sendMessage");
+                    cJSON_AddNumberToObject(req, "chat_id", (double)ctx->cfg->aggregator_chat_id);
+                }
+                cJSON *input = req ? cJSON_AddObjectToObject(req, "input_message_content") : NULL;
                 if (input) {
                     cJSON_AddStringToObject(input, "@type", "inputMessageAlbum");
                     cJSON *contents = cJSON_AddArrayToObject(input, "input_message_contents");
@@ -167,10 +167,6 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
                                 cJSON_AddBoolToObject(copy_opts, "send_copy", true);
                                 cJSON_AddBoolToObject(copy_opts, "replace_caption", true);
                                 if (i == 0) {
-                                    // Use the formatted object directly or create a copy manually
-                                    // ItemToObject takes ownership, so we must not use 'formatted' directly if we need it for others
-                                    // But here we only use it for i == 0. However, the loop continues.
-                                    // Let's create a formattedText object for the first item.
                                     cJSON *new_caption = cJSON_CreateObject();
                                     cJSON_AddStringToObject(new_caption, "@type", "formattedText");
                                     cJSON *text_item = cJSON_GetObjectItem(formatted, "text");
@@ -190,17 +186,17 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
                         td_client_send(ctx->td_client, req);
                     }
                 }
-                cJSON_Delete(req);
+                if (req) cJSON_Delete(req);
             } else {
                 parse_and_send(ctx, chat_id, msg_ids[0], header, main_caption);
             }
             cJSON_Delete(formatted);
         }
     }
+    if (parse_req && !full_text) cJSON_Delete(parse_req);
     if (full_text) free(full_text);
     if (title) free(title);
 
-    // Free group resources
     for (size_t i = 0; i < count; i++) free(texts[i]);
     free(msg_ids);
     free(texts);
@@ -215,7 +211,7 @@ static void group_timer_cb(uv_timer_t *handle) {
     MediaGroup **curr = &ctx->groups;
     while (*curr) {
         MediaGroup *group = *curr;
-        if (now - group->first_seen_ms > 2000) { // 2s timeout
+        if (now - group->first_seen_ms > 2000) {
             flush_media_group(ctx, group);
             *curr = group->next;
             free(group);
@@ -249,7 +245,14 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
     int64_t msg_id = (int64_t)id_obj->valuedouble;
 
     cJSON *gid_obj = cJSON_GetObjectItem(msg, "media_album_id");
-    int64_t grouped_id = (gid_obj && gid_obj->valuestring) ? (int64_t)strtoll(gid_obj->valuestring, NULL, 10) : 0;
+    int64_t grouped_id = 0;
+    if (gid_obj) {
+        if (cJSON_IsString(gid_obj) && gid_obj->valuestring) {
+            grouped_id = (int64_t)strtoll(gid_obj->valuestring, NULL, 10);
+        } else if (cJSON_IsNumber(gid_obj)) {
+            grouped_id = (int64_t)gid_obj->valuedouble;
+        }
+    }
 
     const char *text = "";
     cJSON *content = cJSON_GetObjectItem(msg, "content");
@@ -283,7 +286,6 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
     if (grouped_id == 0) {
         snprintf(hash_input, sizeof(hash_input), "%lld-0-%lld-%s", (long long)chat_id, (long long)reply_id, text);
     } else {
-        // For albums, we deduplicate by message ID to ensure all parts are collected
         snprintf(hash_input, sizeof(hash_input), "album-%lld-%lld-%lld", (long long)chat_id, (long long)grouped_id, (long long)msg_id);
     }
 
@@ -301,6 +303,7 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
 
         if (!group) {
             group = malloc(sizeof(MediaGroup));
+            if (!group) return;
             group->chat_id = chat_id;
             group->grouped_id = grouped_id;
             group->msg_ids = NULL;
@@ -323,9 +326,10 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
                 group->texts = new_texts;
                 group->msg_ids[group->count] = msg_id;
                 group->texts[group->count] = strdup(text);
-                group->count++;
-                // Reset timer on new part to wait for more
-                group->first_seen_ms = uv_now(ctx->loop);
+                if (group->texts[group->count]) {
+                    group->count++;
+                    group->first_seen_ms = uv_now(ctx->loop);
+                }
             }
         }
     } else {
@@ -451,9 +455,57 @@ void handle_update(AppContext *ctx, cJSON *update) {
     cJSON *type_obj = cJSON_GetObjectItem(update, "@type");
     if (!type_obj || !type_obj->valuestring) return;
     const char *type = type_obj->valuestring;
+    
+    fprintf(stderr, "[DEBUG] Received update type: %s\n", type);
 
-    if (strcmp(type, "updateAuthorizationState") == 0) {
-        handle_auth(ctx->td_client, ctx->cfg, update);
+    if (strcmp(type, "user") == 0) {
+        cJSON *first_name = cJSON_GetObjectItem(update, "first_name");
+        cJSON *is_bot = cJSON_GetObjectItem(update, "type");
+        const char *bot_status = "User";
+        if (is_bot) {
+            cJSON *bot_type = cJSON_GetObjectItem(is_bot, "@type");
+            if (bot_type && bot_type->valuestring && strcmp(bot_type->valuestring, "userTypeBot") == 0) {
+                bot_status = "Bot";
+                bool wants_folders = (ctx->cfg->folder_count > 0);
+                bool has_phone = (ctx->cfg->phone && strlen(ctx->cfg->phone) > 0);
+                bool has_bot_token = (ctx->cfg->bot_token && strlen(ctx->cfg->bot_token) > 0);
+                if (wants_folders && has_phone && has_bot_token && !ctx->reauth_requested) {
+                    ctx->reauth_requested = true;
+                    fprintf(stderr, "[WARN] Folder mode needs a user account. This run is still authenticated as bot.\n");
+                }
+            } else if (!ctx->initial_sync_requested) {
+                ctx->initial_sync_requested = true;
+                cJSON *req_chats = cJSON_CreateObject();
+                if (req_chats) {
+                    cJSON_AddStringToObject(req_chats, "@type", "getChats");
+                    cJSON *chat_list = cJSON_AddObjectToObject(req_chats, "chat_list");
+                    if (chat_list) cJSON_AddStringToObject(chat_list, "@type", "chatListMain");
+                    cJSON_AddNumberToObject(req_chats, "limit", 100);
+                    td_client_send(ctx->td_client, req_chats);
+                    cJSON_Delete(req_chats);
+                }
+            }
+        } else if (!ctx->initial_sync_requested) {
+            ctx->initial_sync_requested = true;
+            cJSON *req_chats = cJSON_CreateObject();
+            if (req_chats) {
+                cJSON_AddStringToObject(req_chats, "@type", "getChats");
+                cJSON *chat_list = cJSON_AddObjectToObject(req_chats, "chat_list");
+                if (chat_list) cJSON_AddStringToObject(chat_list, "@type", "chatListMain");
+                cJSON_AddNumberToObject(req_chats, "limit", 100);
+                td_client_send(ctx->td_client, req_chats);
+                cJSON_Delete(req_chats);
+            }
+        }
+        fprintf(stderr, "[DEBUG] Current Account: %s (%s)\n", 
+                (first_name && first_name->valuestring) ? first_name->valuestring : "Unknown",
+                bot_status);
+    } else if (strcmp(type, "updateAuthorizationState") == 0) {
+        ctx->saw_auth_update = true;
+        cJSON *auth_state = cJSON_GetObjectItem(update, "authorization_state");
+        if (auth_state) handle_auth(ctx->td_client, ctx->cfg, auth_state);
+    } else if (strncmp(type, "authorizationState", strlen("authorizationState")) == 0) {
+        if (!ctx->saw_auth_update) handle_auth(ctx->td_client, ctx->cfg, update);
     } else if (strcmp(type, "updateChatFolders") == 0 || strcmp(type, "chatFolders") == 0) {
         cJSON *fs = cJSON_GetObjectItem(update, "chat_folders");
         if (fs) process_folders(ctx, fs);

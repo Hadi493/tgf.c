@@ -29,6 +29,9 @@ typedef struct {
     uv_mutex_t queue_mutex;
     MediaGroup *groups;
     uv_timer_t group_timer;
+    bool saw_auth_update;
+    bool reauth_requested;
+    bool initial_sync_requested;
 } AppContext;
 
 void handle_update(AppContext *ctx, cJSON *update);

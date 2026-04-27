@@ -32,7 +32,14 @@ static void receiver_thread(void *arg) {
     while (1) {
         cJSON *update = td_client_receive(ctx->td_client, 1.0);
         if (update) {
+            cJSON *type = cJSON_GetObjectItem(update, "@type");
+            fprintf(stderr, "[DEBUG] Queuing update: %s\n",
+                    (type && cJSON_IsString(type) && type->valuestring) ? type->valuestring : "unknown");
             UpdateNode *node = malloc(sizeof(UpdateNode));
+            if (!node) {
+                cJSON_Delete(update);
+                continue;
+            }
             node->update = update;
             node->next = NULL;
             uv_mutex_lock(&ctx->queue_mutex);
@@ -69,6 +76,11 @@ int main(int argc, char **argv) {
     td_client_send(client, verb);
     cJSON_Delete(verb);
 
+    cJSON *auth = cJSON_CreateObject();
+    cJSON_AddStringToObject(auth, "@type", "getAuthorizationState");
+    td_client_send(client, auth);
+    cJSON_Delete(auth);
+
     uv_loop_t *loop = uv_default_loop();
     AppContext ctx = {
         .td_client = client,
@@ -76,7 +88,10 @@ int main(int argc, char **argv) {
         .loop = loop,
         .queue_head = NULL,
         .queue_tail = NULL,
-        .groups = NULL
+        .groups = NULL,
+        .saw_auth_update = false,
+        .reauth_requested = false,
+        .initial_sync_requested = false
     };
     uv_mutex_init(&ctx.queue_mutex);
     uv_timer_init(loop, &ctx.group_timer);

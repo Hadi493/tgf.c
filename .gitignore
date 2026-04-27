@@ -1,7 +1,16 @@
 .env
 config.toml
+
 tgf
 tgf.db
-tdlib/
+*.db
+*.sqlite
+
 src/*.o
 vendor/*.o
+
+tdlib/
+tdlib_user/
+tdlib_bot/
+
+.DS_Store

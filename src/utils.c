@@ -15,6 +15,7 @@ void compute_sha256(const char *text, const uint8_t *media, size_t media_len, in
     for (int i = 0; i < 32; i++) {
         sprintf(out_hex + (i * 2), "%02x", hash[i]);
     }
+    out_hex[64] = '\0';
 }
 
 char *format_header(const char *author_name, const char *invite_link) {

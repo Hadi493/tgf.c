@@ -10,6 +10,6 @@ void td_client_send(void *client, cJSON *request);
 cJSON *td_client_execute(cJSON *request);
 cJSON *td_client_receive(void *client, double timeout);
 void td_client_destroy(void *client);
-void handle_auth(void *client, Config *cfg, cJSON *update);
+void handle_auth(void *client, Config *cfg, cJSON *auth_state);
 
 #endif
