@@ -1,24 +1,13 @@
-# Telegram Feed (TGF.C)
+# Telegram Feed (TGF.RS)
 
-`TGF.C` is *A minimalist Telegram channel aggregator and forwarder. Consolidate all your favorite sources into one unified, distraction-free feed.*
+`TGF.RS` is *A minimalist Telegram channel aggregator and forwarder. Consolidate all your favorite sources into one unified, distraction-free feed.*
 
-`Rewritten In C` From [TGF](https://github.com/Hadi493/tgf)
-
-
-## Dependencies
-
-- `libtdjson` (TDLib)
-- `libuv`
-- `sqlite3`
-- `cJSON` (included in vendor)
-- `toml-c` (included in vendor)
-- `sha256` (included in vendor)
+`Rewritten In Rust` From [TGF](https://github.com/Hadi493/tgf)
 
 ## Quick Start:
 
 Configure `.env` and `config.toml` first.
 
 ```bash
-make
-./tgf
+cargo run
 ```
