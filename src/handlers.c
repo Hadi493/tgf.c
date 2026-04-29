@@ -455,8 +455,8 @@ void handle_update(AppContext *ctx, cJSON *update) {
     cJSON *type_obj = cJSON_GetObjectItem(update, "@type");
     if (!type_obj || !type_obj->valuestring) return;
     const char *type = type_obj->valuestring;
-    
-    fprintf(stderr, "[DEBUG] Received update type: %s\n", type);
+
+    // fprintf(stderr, "[DEBUG] Received update type: %s\n", type);
 
     if (strcmp(type, "user") == 0) {
         cJSON *first_name = cJSON_GetObjectItem(update, "first_name");
@@ -497,9 +497,9 @@ void handle_update(AppContext *ctx, cJSON *update) {
                 cJSON_Delete(req_chats);
             }
         }
-        fprintf(stderr, "[DEBUG] Current Account: %s (%s)\n", 
-                (first_name && first_name->valuestring) ? first_name->valuestring : "Unknown",
-                bot_status);
+        // fprintf(stderr, "[DEBUG] Current Account: %s (%s)\n",
+                // (first_name && first_name->valuestring) ? first_name->valuestring : "Unknown",
+                // bot_status);
     } else if (strcmp(type, "updateAuthorizationState") == 0) {
         ctx->saw_auth_update = true;
         cJSON *auth_state = cJSON_GetObjectItem(update, "authorization_state");

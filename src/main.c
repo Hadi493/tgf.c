@@ -32,9 +32,9 @@ static void receiver_thread(void *arg) {
     while (1) {
         cJSON *update = td_client_receive(ctx->td_client, 1.0);
         if (update) {
-            cJSON *type = cJSON_GetObjectItem(update, "@type");
-            fprintf(stderr, "[DEBUG] Queuing update: %s\n",
-                    (type && cJSON_IsString(type) && type->valuestring) ? type->valuestring : "unknown");
+            // cJSON *type = cJSON_GetObjectItem(update, "@type");
+            // fprintf(stderr, "[DEBUG] Queuing update: %s\n",
+                     //         (type && cJSON_IsString(type) && type->valuestring) ? type->valuestring : "unknown");
             UpdateNode *node = malloc(sizeof(UpdateNode));
             if (!node) {
                 cJSON_Delete(update);
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
     if (init_storage(cfg->db_path) != 0) return 1;
 
     void *client = td_client_create();
-    
+
     cJSON *verb = cJSON_CreateObject();
     cJSON_AddStringToObject(verb, "@type", "setLogVerbosityLevel");
     cJSON_AddNumberToObject(verb, "new_verbosity_level", 1);
