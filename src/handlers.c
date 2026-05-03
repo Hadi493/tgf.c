@@ -200,7 +200,7 @@ static void flush_media_group(AppContext *ctx, MediaGroup *group) {
     for (size_t i = 0; i < count; i++) free(texts[i]);
     free(msg_ids);
     free(texts);
-    printf("\033[1;32m[FORWARD]\033[0m Album from %lld (%zu msgs) flushed\n", (long long)chat_id, count);
+    printf("\033[1;32m[FORWARDED]\033[0m Album from %lld (%zu msgs) flushed\n", (long long)chat_id, count);
 }
 
 static void group_timer_cb(uv_timer_t *handle) {
@@ -340,7 +340,7 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
             if (title) snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: %s\n\n", msg_link, title);
             else snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: Unknown\n\n", msg_link);
             parse_and_send(ctx, chat_id, msg_id, header, text);
-            printf("\033[1;32m[FORWARD]\033[0m From %lld, msg %lld\n", (long long)chat_id, (long long)msg_id);
+            printf("\033[1;32m[FORWARDED]\033[0m From %lld, msg %lld\n", (long long)chat_id, (long long)msg_id);
             free(msg_link);
         }
         if (title) free(title);
