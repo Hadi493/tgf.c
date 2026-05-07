@@ -22,7 +22,10 @@ Configure `.env` and `config.toml` first.
 gcc nob.c -o nob
 ```
 ```bash
-./nob run
+./nob
 # or
+./nob run
+```
+```bash
 ./tgf
 ```
