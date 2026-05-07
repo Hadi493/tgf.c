@@ -19,6 +19,9 @@
 Configure `.env` and `config.toml` first.
 
 ```bash
-make
+gcc nob.c -o nob
+# or
+./nob run
+
 ./tgf
 ```
