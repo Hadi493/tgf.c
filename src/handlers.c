@@ -340,7 +340,8 @@ static void handle_new_message(AppContext *ctx, cJSON *msg) {
             if (title) snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: %s\n\n", msg_link, title);
             else snprintf(header, sizeof(header), "<a href=\"%s\">Source</a>: Unknown\n\n", msg_link);
             parse_and_send(ctx, chat_id, msg_id, header, text);
-            printf("\033[1;32m[FORWARDED]\033[0m From %lld, msg %lld\n", (long long)chat_id, (long long)msg_id);
+            // printf("\033[1;32m[FORWARDED]\033[0m From %lld, msg %lld\n", (long long)chat_id, (long long)msg_id);
+            printf("\033[1;32m[FORWARDED]\033[0m From %lld\n", (long long)chat_id);
             free(msg_link);
         }
         if (title) free(title);

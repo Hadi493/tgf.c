@@ -24,7 +24,7 @@ void *td_client_create(void) {
 void td_client_send(void *client, cJSON *request) {
     char *json = cJSON_PrintUnformatted(request);
     if (!json) return;
-    fprintf(stderr, "Sending to TDLib: %s\n", json);
+    //fprintf(stderr, "Sending to TDLib: %s\n", json);
     td_json_client_send(client, json);
     free(json);
 }
@@ -53,9 +53,9 @@ void handle_auth(void *client, Config *cfg, cJSON *auth_state) {
     cJSON *type_obj = cJSON_GetObjectItemCaseSensitive(auth_state, "@type");
     if (!type_obj || !type_obj->valuestring) return;
     const char *state = type_obj->valuestring;
-    
+
     fprintf(stderr, "[DEBUG] Auth state: %s\n", state);
-    
+
     if (strcmp(state, "authorizationStateWaitTdlibParameters") == 0) {
         const char *storage_dir = td_storage_dir(cfg);
         cJSON *req = cJSON_CreateObject();
@@ -111,7 +111,7 @@ void handle_auth(void *client, Config *cfg, cJSON *auth_state) {
         }
     } else if (strcmp(state, "authorizationStateReady") == 0) {
         fprintf(stderr, "[DEBUG] Authorized! Sending initial sync requests...\n");
-        
+
         cJSON *req_me = cJSON_CreateObject();
         cJSON_AddStringToObject(req_me, "@type", "getMe");
         td_client_send(client, req_me);
